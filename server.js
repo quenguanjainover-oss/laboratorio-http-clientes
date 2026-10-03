@@ -81,8 +81,14 @@ const servidor = http.createServer(async (req, res) => {
 
   try {
     if (req.method === 'GET' && ruta === '/') {
-      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Servidor corriendo. Consulta /api/clientes');
+      const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Length': html.length
+      });
+
+      res.end(html);
       return;
     }
 
