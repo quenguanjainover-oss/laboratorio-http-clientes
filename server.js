@@ -1,15 +1,14 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const { eventLogger, metricas } = require('./backend/bigdata/eventLogger');
 
 const PORT = 3000;
 const CSV = path.join(__dirname, 'data', 'clientes.csv');
-
 let siguienteSolicitud = 0;
 
 function leerClientes() {
   const lineas = fs.readFileSync(CSV, 'utf8').trim().split(/\r?\n/);
-
   return lineas.slice(1).filter(Boolean).map(linea => {
     const [id, nombre, correo] = linea.split(',');
     return { id: Number(id), nombre, correo };
@@ -60,28 +59,59 @@ function leerCuerpo(req) {
 
 function validar(datos) {
   if (!datos || typeof datos.nombre !== 'string' ||
-      typeof datos.correo !== 'string') return false;
+      typeof datos.correo !== 'string') {
+    return false;
+  }
 
   const nombre = datos.nombre.trim();
   const correo = datos.correo.trim();
 
-  return !!nombre && !!correo && !/[\r\n,]/.test(nombre) &&
-         !/[\r\n,]/.test(correo) && correo.includes('@');
+  return !!nombre && !!correo &&
+         !/[\r\n,]/.test(nombre) &&
+         !/[\r\n,]/.test(correo) &&
+         correo.includes('@');
 }
 
 const servidor = http.createServer(async (req, res) => {
   const numero = ++siguienteSolicitud;
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  eventLogger(req, res);
+
+  const url = new URL(
+    req.url,
+    `http://${req.headers.host || 'localhost'}`
+  );
+
   const ruta = url.pathname;
 
   console.log(`\n[${numero}] ${req.method} ${ruta}`);
   console.log(`[${numero}] Headers recibidos:`, req.headers);
 
-  res.on('finish', () => console.log(`[${numero}] Respuesta: ${res.statusCode}`));
+  res.on('finish', () => {
+    console.log(`[${numero}] Respuesta: ${res.statusCode}`);
+  });
 
   try {
+    if (ruta === '/api/laboratorio/evento') {
+      responder(res, 200, {
+        recibido: true,
+        metodo: req.method
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && ruta === '/api/bigdata/metricas') {
+      responder(res, 200, {
+        ...metricas,
+        ahora: new Date().toISOString()
+      });
+      return;
+    }
+
     if (req.method === 'GET' && ruta === '/') {
-      const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+      const html = fs.readFileSync(
+        path.join(__dirname, 'public', 'index.html')
+      );
 
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -95,16 +125,25 @@ const servidor = http.createServer(async (req, res) => {
     const match = ruta.match(/^\/api\/clientes\/(\d+)$/);
 
     if (ruta !== '/api/clientes' && !match) {
-      responder(res, 404, { error: 'Ruta no encontrada' });
+      responder(res, 404, {
+        error: 'Ruta no encontrada'
+      });
       return;
     }
 
     const clientes = leerClientes();
+
     const id = match ? Number(match[1]) : null;
-    const indice = match ? clientes.findIndex(c => c.id === id) : -1;
+
+    const indice = match
+      ? clientes.findIndex(c => c.id === id)
+      : -1;
 
     if (req.method === 'GET' && ruta === '/api/clientes') {
-      console.log(`[${numero}] CSV leído: ${clientes.length} registros`);
+      console.log(
+        `[${numero}] CSV leído: ${clientes.length} registros`
+      );
+
       responder(res, 200, clientes);
       return;
     }
@@ -113,8 +152,11 @@ const servidor = http.createServer(async (req, res) => {
       responder(
         res,
         indice < 0 ? 404 : 200,
-        indice < 0 ? { error: 'Cliente no encontrado' } : clientes[indice]
+        indice < 0
+          ? { error: 'Cliente no encontrado' }
+          : clientes[indice]
       );
+
       return;
     }
 
@@ -124,7 +166,10 @@ const servidor = http.createServer(async (req, res) => {
       console.log(`[${numero}] JSON recibido:`, datos);
 
       if (!validar(datos)) {
-        responder(res, 400, { error: 'Nombre y correo válidos requeridos' });
+        responder(res, 400, {
+          error: 'Nombre y correo válidos requeridos'
+        });
+
         return;
       }
 
@@ -135,9 +180,12 @@ const servidor = http.createServer(async (req, res) => {
       };
 
       clientes.push(nuevo);
+
       guardarClientes(clientes);
 
-      console.log(`[${numero}] CSV escrito: nuevo id ${nuevo.id}`);
+      console.log(
+        `[${numero}] CSV escrito: nuevo id ${nuevo.id}`
+      );
 
       responder(res, 201, nuevo);
       return;
@@ -145,7 +193,10 @@ const servidor = http.createServer(async (req, res) => {
 
     if (req.method === 'PUT' && match) {
       if (indice < 0) {
-        responder(res, 404, { error: 'Cliente no encontrado' });
+        responder(res, 404, {
+          error: 'Cliente no encontrado'
+        });
+
         return;
       }
 
@@ -154,7 +205,10 @@ const servidor = http.createServer(async (req, res) => {
       console.log(`[${numero}] JSON recibido:`, datos);
 
       if (!validar(datos)) {
-        responder(res, 400, { error: 'Nombre y correo válidos requeridos' });
+        responder(res, 400, {
+          error: 'Nombre y correo válidos requeridos'
+        });
+
         return;
       }
 
@@ -166,7 +220,9 @@ const servidor = http.createServer(async (req, res) => {
 
       guardarClientes(clientes);
 
-      console.log(`[${numero}] CSV escrito: id ${id} actualizado`);
+      console.log(
+        `[${numero}] CSV escrito: id ${id} actualizado`
+      );
 
       responder(res, 200, clientes[indice]);
       return;
@@ -174,7 +230,10 @@ const servidor = http.createServer(async (req, res) => {
 
     if (req.method === 'DELETE' && match) {
       if (indice < 0) {
-        responder(res, 404, { error: 'Cliente no encontrado' });
+        responder(res, 404, {
+          error: 'Cliente no encontrado'
+        });
+
         return;
       }
 
@@ -182,23 +241,34 @@ const servidor = http.createServer(async (req, res) => {
 
       guardarClientes(clientes);
 
-      console.log(`[${numero}] CSV escrito: id ${id} eliminado`);
+      console.log(
+        `[${numero}] CSV escrito: id ${id} eliminado`
+      );
 
       responder(res, 200, eliminado);
       return;
     }
 
-    responder(res, 405, { error: 'Método no permitido' });
+    responder(res, 405, {
+      error: 'Método no permitido'
+    });
 
   } catch (error) {
-    console.error(`[${numero}] Error:`, error.message);
+    console.error(
+      `[${numero}] Error:`,
+      error.message
+    );
 
     if (!res.headersSent) {
-      responder(res, 400, { error: error.message });
+      responder(res, 400, {
+        error: error.message
+      });
     }
   }
 });
 
 servidor.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  console.log(
+    `Servidor escuchando en http://localhost:${PORT}`
+  );
 });
