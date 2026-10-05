@@ -5,6 +5,21 @@ const path = require("path");
 const PORT = 3000;
 const DATA_FILE = path.join(__dirname, "data", "clientes.csv");
 
+function encabezadosCORS() {
+    return {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Cache-Control": "no-store"
+    };
+}
+
+function responder(res, estado, datos) {
+    res.writeHead(estado, encabezadosCORS());
+    res.end(JSON.stringify(datos));
+}
+
 function leerClientes() {
     const contenido = fs.readFileSync(DATA_FILE, "utf8").trim();
     const lineas = contenido.split(/\r?\n/);
@@ -33,23 +48,28 @@ function guardarClientes(clientes) {
 
 const server = http.createServer((req, res) => {
 
+    if (req.method === "OPTIONS") {
+        res.writeHead(204, encabezadosCORS());
+        res.end();
+        return;
+    }
+
+    if (req.method === "GET" && req.url === "/health") {
+        responder(res, 200, {
+            ok: true,
+            servicio: "backend-http-lab"
+        });
+        return;
+    }
+
     if (req.method === "GET" && req.url === "/api/clientes") {
         try {
             const clientes = leerClientes();
-
-            res.writeHead(200, {
-                "Content-Type": "application/json"
-            });
-
-            res.end(JSON.stringify(clientes));
+            responder(res, 200, clientes);
         } catch (error) {
-            res.writeHead(500, {
-                "Content-Type": "application/json"
-            });
-
-            res.end(JSON.stringify({
+            responder(res, 500, {
                 error: "No se pudieron leer los clientes"
-            }));
+            });
         }
 
         return;
@@ -67,14 +87,9 @@ const server = http.createServer((req, res) => {
                 const datos = JSON.parse(cuerpo);
 
                 if (!datos.nombre || !datos.correo) {
-                    res.writeHead(400, {
-                        "Content-Type": "application/json"
-                    });
-
-                    res.end(JSON.stringify({
+                    responder(res, 400, {
                         error: "Nombre y correo son obligatorios"
-                    }));
-
+                    });
                     return;
                 }
 
@@ -93,20 +108,12 @@ const server = http.createServer((req, res) => {
                 clientes.push(nuevoCliente);
                 guardarClientes(clientes);
 
-                res.writeHead(201, {
-                    "Content-Type": "application/json"
-                });
-
-                res.end(JSON.stringify(nuevoCliente));
+                responder(res, 201, nuevoCliente);
 
             } catch (error) {
-                res.writeHead(400, {
-                    "Content-Type": "application/json"
+                responder(res, 400, {
+                    error: "JSON invÃ¡lido"
                 });
-
-                res.end(JSON.stringify({
-                    error: "JSON inválido"
-                }));
             }
         });
 
@@ -128,14 +135,9 @@ const server = http.createServer((req, res) => {
                 const indice = clientes.findIndex(cliente => cliente.id === id);
 
                 if (indice === -1) {
-                    res.writeHead(404, {
-                        "Content-Type": "application/json"
-                    });
-
-                    res.end(JSON.stringify({
+                    responder(res, 404, {
                         error: "Cliente no encontrado"
-                    }));
-
+                    });
                     return;
                 }
 
@@ -144,20 +146,12 @@ const server = http.createServer((req, res) => {
 
                 guardarClientes(clientes);
 
-                res.writeHead(200, {
-                    "Content-Type": "application/json"
-                });
-
-                res.end(JSON.stringify(clientes[indice]));
+                responder(res, 200, clientes[indice]);
 
             } catch (error) {
-                res.writeHead(400, {
-                    "Content-Type": "application/json"
+                responder(res, 400, {
+                    error: "JSON invÃ¡lido"
                 });
-
-                res.end(JSON.stringify({
-                    error: "JSON inválido"
-                }));
             }
         });
 
@@ -170,14 +164,9 @@ const server = http.createServer((req, res) => {
         const indice = clientes.findIndex(cliente => cliente.id === id);
 
         if (indice === -1) {
-            res.writeHead(404, {
-                "Content-Type": "application/json"
-            });
-
-            res.end(JSON.stringify({
+            responder(res, 404, {
                 error: "Cliente no encontrado"
-            }));
-
+            });
             return;
         }
 
@@ -186,22 +175,14 @@ const server = http.createServer((req, res) => {
         clientes.splice(indice, 1);
         guardarClientes(clientes);
 
-        res.writeHead(200, {
-            "Content-Type": "application/json"
-        });
-
-        res.end(JSON.stringify(eliminado));
+        responder(res, 200, eliminado);
 
         return;
     }
 
-    res.writeHead(404, {
-        "Content-Type": "application/json"
-    });
-
-    res.end(JSON.stringify({
+    responder(res, 404, {
         error: "Ruta no encontrada"
-    }));
+    });
 });
 
 server.listen(PORT, () => {
